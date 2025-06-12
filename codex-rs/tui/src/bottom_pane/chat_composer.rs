@@ -267,7 +267,7 @@ impl ChatComposer<'_> {
 
         let bs = if has_focus {
             BlockState {
-                right_title: Line::from("Enter to send | Ctrl+D to quit | Ctrl+J for newline")
+                right_title: Line::from("Enter to send | Ctrl+C twice to quit | Ctrl+J for newline")
                     .alignment(Alignment::Right),
                 border_style: Style::default(),
             }

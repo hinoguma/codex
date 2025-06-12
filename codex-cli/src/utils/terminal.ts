@@ -82,3 +82,36 @@ export function onExit(): void {
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Helper for Ctrl+C handling
+// ---------------------------------------------------------------------------
+
+let awaitingCtrlC = false;
+let awaitingTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Handle Ctrl+C keypresses. The first press prints a confirmation message and
+ * waits briefly for a second press. A second press within the confirmation
+ * window triggers a graceful shutdown.
+ *
+ * @returns `true` if the application should exit now, `false` otherwise.
+ */
+export function confirmExit(): boolean {
+  if (awaitingCtrlC) {
+    awaitingCtrlC = false;
+    if (awaitingTimer) {
+      clearTimeout(awaitingTimer);
+      awaitingTimer = null;
+    }
+    return true;
+  }
+
+  // eslint-disable-next-line no-console
+  console.error("Press Ctrl+C again to exit");
+  awaitingCtrlC = true;
+  awaitingTimer = setTimeout(() => {
+    awaitingCtrlC = false;
+  }, 1500);
+  return false;
+}

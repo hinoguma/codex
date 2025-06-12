@@ -19,6 +19,7 @@ use crossterm::event::MouseEventKind;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::channel;
+use std::time::{Duration, Instant};
 
 /// Top-level application state: which full-screen view is currently active.
 #[allow(clippy::large_enum_variant)]
@@ -39,13 +40,10 @@ pub(crate) struct App<'a> {
     app_event_tx: AppEventSender,
     app_event_rx: Receiver<AppEvent>,
     app_state: AppState<'a>,
-
-    /// Config is stored here so we can recreate ChatWidgets as needed.
     config: Config,
-
-    /// Stored parameters needed to instantiate the ChatWidget later, e.g.,
-    /// after dismissing the Git-repo warning.
     chat_args: Option<ChatWidgetArgs>,
+    /// Ctrl+C二段階終了確認のためのタイムスタンプ
+    ctrl_c_exit_pending_until: Option<Instant>,
 }
 
 /// Aggregate parameters needed to create a `ChatWidget`, as creation may be
@@ -162,6 +160,7 @@ impl<'a> App<'a> {
             app_state,
             config,
             chat_args,
+            ctrl_c_exit_pending_until: None,
         }
     }
 
@@ -180,7 +179,20 @@ impl<'a> App<'a> {
         let app_event_tx = self.app_event_tx.clone();
         app_event_tx.send(AppEvent::Redraw);
 
+        // Ctrl+C二段階終了の猶予秒数
+        const EXIT_CONFIRM_WINDOW: Duration = Duration::from_millis(1500);
+
         while let Ok(event) = self.app_event_rx.recv() {
+            // Ctrl+C二段階終了の猶予が切れていたらリセット
+            if let Some(until) = self.ctrl_c_exit_pending_until {
+                if Instant::now() > until {
+                    self.ctrl_c_exit_pending_until = None;
+                }
+            }
+            // ChatWidgetに状態を伝える
+            if let AppState::Chat { widget } = &mut self.app_state {
+                widget.set_ctrl_c_exit_pending(self.ctrl_c_exit_pending_until.is_some());
+            }
             match event {
                 AppEvent::Redraw => {
                     self.draw_next_frame(terminal)?;
@@ -192,15 +204,19 @@ impl<'a> App<'a> {
                             modifiers: crossterm::event::KeyModifiers::CONTROL,
                             ..
                         } => {
-                            // Forward interrupt to ChatWidget when active.
-                            match &mut self.app_state {
-                                AppState::Chat { widget } => {
-                                    widget.submit_op(Op::Interrupt);
-                                }
-                                AppState::Login { .. } | AppState::GitWarning { .. } => {
-                                    // No-op.
+                            // 2回目のCtrl+Cかどうか判定
+                            let now = Instant::now();
+                            if let Some(until) = self.ctrl_c_exit_pending_until {
+                                if now <= until {
+                                    // 2回目: 終了
+                                    self.app_event_tx.send(AppEvent::ExitRequest);
+                                    continue;
                                 }
                             }
+                            // 1回目: 状態遷移し、メッセージ表示用にRedraw
+                            self.ctrl_c_exit_pending_until = Some(now + EXIT_CONFIRM_WINDOW);
+                            // ChatWidget等でメッセージを表示するためRedraw
+                            self.app_event_tx.send(AppEvent::Redraw);
                         }
                         KeyEvent {
                             code: KeyCode::Char('d'),

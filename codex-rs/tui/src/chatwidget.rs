@@ -26,6 +26,9 @@ use ratatui::layout::Layout;
 use ratatui::layout::Rect;
 use ratatui::widgets::Widget;
 use ratatui::widgets::WidgetRef;
+use ratatui::widgets::Paragraph;
+use ratatui::style::Color;
+use ratatui::text::{Span, Spans};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -46,6 +49,9 @@ pub(crate) struct ChatWidget<'a> {
     input_focus: InputFocus,
     config: Config,
     initial_user_message: Option<UserMessage>,
+
+    /// Ctrl+C二段階終了確認メッセージ表示用
+    pub ctrl_c_exit_pending: bool,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -131,7 +137,12 @@ impl ChatWidget<'_> {
                 initial_prompt.unwrap_or_default(),
                 initial_images,
             ),
+            ctrl_c_exit_pending: false,
         }
+    }
+
+    pub(crate) fn set_ctrl_c_exit_pending(&mut self, pending: bool) {
+        self.ctrl_c_exit_pending = pending;
     }
 
     pub(crate) fn handle_key_event(&mut self, key_event: KeyEvent) {
@@ -400,13 +411,24 @@ impl ChatWidget<'_> {
 impl WidgetRef for &ChatWidget<'_> {
     fn render_ref(&self, area: Rect, buf: &mut Buffer) {
         let bottom_height = self.bottom_pane.calculate_required_height(&area);
-
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(bottom_height)])
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(bottom_height),
+                // 警告メッセージ用の1行
+                Constraint::Length(if self.ctrl_c_exit_pending { 1 } else { 0 }),
+            ])
             .split(area);
-
         self.conversation_history.render(chunks[0], buf);
         (&self.bottom_pane).render(chunks[1], buf);
+        if self.ctrl_c_exit_pending {
+            let msg = Paragraph::new(Spans::from(vec![Span::styled(
+                "Ctrl+Cをもう一度押すと終了します (1.5秒以内)",
+                Style::default().fg(Color::Yellow).bg(Color::Black),
+            )]))
+            .alignment(Alignment::Center);
+            msg.render(chunks[2], buf);
+        }
     }
 }

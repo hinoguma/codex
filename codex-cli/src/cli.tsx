@@ -45,7 +45,7 @@ import { createInputItem } from "./utils/input-utils";
 import { initLogger } from "./utils/logger/log";
 import { isModelSupportedForResponses } from "./utils/model-utils.js";
 import { parseToolCall } from "./utils/parsers";
-import { onExit, setInkRenderer } from "./utils/terminal";
+import { onExit, setInkRenderer, confirmExit } from "./utils/terminal";
 import chalk from "chalk";
 import { spawnSync } from "child_process";
 import fs from "fs";
@@ -689,9 +689,15 @@ const exit = () => {
   process.exit(0);
 };
 
-process.on("SIGINT", exit);
-process.on("SIGQUIT", exit);
-process.on("SIGTERM", exit);
+const handleCtrlC = () => {
+  if (confirmExit()) {
+    exit();
+  }
+};
+
+process.on("SIGINT", handleCtrlC);
+process.on("SIGQUIT", handleCtrlC);
+process.on("SIGTERM", handleCtrlC);
 
 // ---------------------------------------------------------------------------
 // Fallback for Ctrl-C when stdin is in raw-mode
@@ -705,7 +711,7 @@ if (process.stdin.isTTY) {
   const onRawData = (data: Buffer | string): void => {
     const str = Buffer.isBuffer(data) ? data.toString("utf8") : data;
     if (str === "\u0003") {
-      exit();
+      handleCtrlC();
     }
   };
   process.stdin.on("data", onRawData);

@@ -21,7 +21,7 @@ import {
   loadCommandHistory,
   addToHistory,
 } from "../../utils/storage/command-history.js";
-import { clearTerminal, onExit } from "../../utils/terminal.js";
+import { clearTerminal, onExit, confirmExit } from "../../utils/terminal.js";
 import { Box, Text, useApp, useInput, useStdin } from "ink";
 import { fileURLToPath } from "node:url";
 import React, {
@@ -110,6 +110,7 @@ export default function TerminalChatInput({
   // Track the caret row across keystrokes
   const prevCursorRow = useRef<number | null>(null);
   const prevCursorWasAtLastRow = useRef<boolean>(false);
+  const [awaitingExit, setAwaitingExit] = useState(false);
 
   // --- Helper for updating input, remounting editor, and moving cursor to end ---
   const applyFsSuggestion = useCallback((newInputText: string) => {
@@ -457,11 +458,16 @@ export default function TerminalChatInput({
           ]);
         }
       } else if (_input === "\u0003" || (_input === "c" && _key.ctrl)) {
-        setTimeout(() => {
-          app.exit();
-          onExit();
-          process.exit(0);
-        }, 60);
+        if (confirmExit()) {
+          setTimeout(() => {
+            app.exit();
+            onExit();
+            process.exit(0);
+          }, 60);
+        } else {
+          setAwaitingExit(true);
+          setTimeout(() => setAwaitingExit(false), 1500);
+        }
       }
     },
     { isActive: active },
@@ -853,26 +859,29 @@ export default function TerminalChatInput({
             displayLimit={5}
           />
         ) : (
-          <Text dimColor>
-            ctrl+c to exit | "/" to see commands | enter to send
-            {contextLeftPercent > 25 && (
-              <>
-                {" — "}
-                <Text color={contextLeftPercent > 40 ? "green" : "yellow"}>
-                  {Math.round(contextLeftPercent)}% context left
-                </Text>
-              </>
-            )}
-            {contextLeftPercent <= 25 && (
-              <>
-                {" — "}
-                <Text color="red">
-                  {Math.round(contextLeftPercent)}% context left — send
-                  "/compact" to condense context
-                </Text>
-              </>
-            )}
-          </Text>
+          <>
+            <Text dimColor>
+              ctrl+c twice to exit | "/" to see commands | enter to send
+              {contextLeftPercent > 25 && (
+                <>
+                  {" — "}
+                  <Text color={contextLeftPercent > 40 ? "green" : "yellow"}>
+                    {Math.round(contextLeftPercent)}% context left
+                  </Text>
+                </>
+              )}
+              {contextLeftPercent <= 25 && (
+                <>
+                  {" — "}
+                  <Text color="red">
+                    {Math.round(contextLeftPercent)}% context left — send
+                    "/compact" to condense context
+                  </Text>
+                </>
+              )}
+            </Text>
+            {awaitingExit && <Text dimColor>Press Ctrl+C again to exit</Text>}
+          </>
         )}
       </Box>
     </Box>

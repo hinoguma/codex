@@ -17,6 +17,7 @@ import {
   makeAsciiDirectoryStructure,
 } from "../utils/singlepass/context_files";
 import { EditedFilesSchema } from "../utils/singlepass/file_ops";
+import { confirmExit } from "../utils/terminal";
 import * as fsSync from "fs";
 import * as fsPromises from "fs/promises";
 import { Box, Text, useApp, useInput } from "ink";
@@ -215,11 +216,12 @@ function InputPrompt({
 
   useInput((input, key) => {
     if ((key.ctrl && (input === "c" || input === "C")) || input === "\u0003") {
-      // Ctrl+C pressed – treat as interrupt
-      if (onCtrlC) {
-        onCtrlC();
-      } else {
-        process.exit(0);
+      if (confirmExit()) {
+        if (onCtrlC) {
+          onCtrlC();
+        } else {
+          process.exit(0);
+        }
       }
     } else if (key.return) {
       if (value.trim() !== "") {

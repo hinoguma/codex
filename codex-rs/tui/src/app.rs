@@ -18,6 +18,7 @@ use crossterm::event::MouseEvent;
 use crossterm::event::MouseEventKind;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
+use std::time::{Duration, Instant};
 use std::sync::mpsc::channel;
 
 /// Top-level application state: which full-screen view is currently active.
@@ -39,6 +40,7 @@ pub(crate) struct App<'a> {
     app_event_tx: AppEventSender,
     app_event_rx: Receiver<AppEvent>,
     app_state: AppState<'a>,
+    last_ctrl_c: Option<std::time::Instant>,
 
     /// Config is stored here so we can recreate ChatWidgets as needed.
     config: Config,
@@ -162,6 +164,7 @@ impl<'a> App<'a> {
             app_state,
             config,
             chat_args,
+            last_ctrl_c: None,
         }
     }
 
@@ -200,6 +203,10 @@ impl<'a> App<'a> {
                                 AppState::Login { .. } | AppState::GitWarning { .. } => {
                                     // No-op.
                                 }
+                            }
+
+                            if self.confirm_exit() {
+                                self.app_event_tx.send(AppEvent::ExitRequest);
                             }
                         }
                         KeyEvent {
@@ -320,5 +327,20 @@ impl<'a> App<'a> {
             AppState::Chat { widget } => widget.handle_codex_event(event),
             AppState::Login { .. } | AppState::GitWarning { .. } => {}
         }
+    }
+
+    /// Handle Ctrl+C presses. Returns `true` if the application should exit.
+    fn confirm_exit(&mut self) -> bool {
+        const TIMEOUT: Duration = Duration::from_millis(1500);
+        if let Some(last) = self.last_ctrl_c {
+            if last.elapsed() <= TIMEOUT {
+                self.last_ctrl_c = None;
+                return true;
+            }
+        }
+
+        self.last_ctrl_c = Some(Instant::now());
+        eprintln!("Press Ctrl+C again to exit");
+        false
     }
 }
